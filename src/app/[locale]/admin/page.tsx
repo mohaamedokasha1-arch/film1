@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AlertTriangle, Database, Film, Heart, History, Server, Users } from "lucide-react";
+import { AlertTriangle, Database, Film, Heart, History, Plus, Server, ServerCog, Users } from "lucide-react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { auth } from "@/lib/auth";
 import { getAdminOverview, getSiteSettings, isDatabaseConfigured } from "@/lib/store";
@@ -27,6 +27,7 @@ export default async function AdminOverviewPage({ params }: { params: Promise<{ 
     { icon: Server, label: t("totalAdmins"), value: formatNumber(stats.totalAdmins, locale) },
     { icon: Heart, label: t("watchlistItems"), value: formatNumber(stats.watchlistItems, locale) },
     { icon: History, label: t("historyItems"), value: formatNumber(stats.historyItems, locale) },
+    { icon: Film, label: t("customTitles"), value: formatNumber(stats.customTitles, locale), href: "/admin/titles" as const },
   ];
 
   return (
@@ -43,15 +44,24 @@ export default async function AdminOverviewPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex flex-wrap gap-2">
+        <Link href="/admin/titles/new" className="btn-gold !py-2 !text-xs">
+          <Plus className="h-3.5 w-3.5" /> {t("manageContent")}
+        </Link>
+        <Link href="/admin/streams" className="btn-outline !py-2 !text-xs">
+          <ServerCog className="h-3.5 w-3.5" /> {t("streams")}
+        </Link>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {cards.map((card) => (
-          <div key={card.label} className="surface p-5">
+          <Link key={card.label} href={card.href ?? "/admin"} className="surface p-5 transition hover:border-gold-500/40">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-gold-500/10 text-gold-400">
               <card.icon className="h-5 w-5" />
             </span>
             <p className="mt-4 text-2xl font-extrabold">{card.value}</p>
             <p className="mt-1 text-[10px] uppercase tracking-widest text-muted/70">{card.label}</p>
-          </div>
+          </Link>
         ))}
       </div>
 

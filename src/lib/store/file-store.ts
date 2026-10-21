@@ -5,19 +5,34 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 import type {
   AdminStats,
+  CustomTitleInput,
+  CustomTitleRecord,
   HistoryRecord,
   MediaType,
   PublicUser,
+  StreamSourceInput,
+  StreamSourceRecord,
   UserRecord,
   WatchlistRecord,
 } from "@/types";
 import type { DataStore, HistoryInput, NewUser, WatchlistInput } from "./types";
+import {
+  nextNumericId,
+  normalizeCustomFields,
+  normalizeStreamInput,
+  rowToCustomTitle,
+  rowToStreamSource,
+  type CustomTitleRow,
+  type StreamSourceRow,
+} from "./custom-helpers";
 
 interface FileData {
   users: UserRecord[];
   watchlist: (WatchlistRecord & { userId: string })[];
   history: (HistoryRecord & { userId: string })[];
   settings: Record<string, string>;
+  customTitles: CustomTitleRow[];
+  streams: StreamSourceRow[];
 }
 
 /**
@@ -48,9 +63,11 @@ export class FileStore implements DataStore {
         watchlist: parsed.watchlist ?? [],
         history: parsed.history ?? [],
         settings: parsed.settings ?? {},
+        customTitles: parsed.customTitles ?? [],
+        streams: parsed.streams ?? [],
       };
     } catch {
-      return { users: [], watchlist: [], history: [], settings: {} };
+      return { users: [], watchlist: [], history: [], settings: {}, customTitles: [], streams: [] };
     }
   }
 
@@ -244,8 +261,114 @@ export class FileStore implements DataStore {
       totalAdmins: data.users.filter((user) => user.role === "ADMIN").length,
       watchlistItems: data.watchlist.length,
       historyItems: data.history.length,
+      customTitles: data.customTitles.length,
       source: "catalog",
       database: false,
     };
+  }
+
+  async listCustomTitles(options?: { publishedOnly?: boolean }): Promise<CustomTitleRecord[]> {
+    const data = await this.read();
+    return [...data.customTitles]
+      .filter((row) => (options?.publishedOnly ? row.published : true))
+      .sort((a, b) => b.numericId - a.numericId)
+      .map(rowToCustomTitle);
+  }
+
+  async findCustomTitle(id: string) {
+    const data = await this.read();
+    const row = data.customTitles.find((entry) => entry.id === id);
+    return row ? rowToCustomTitle(row) : null;
+  }
+
+  async findCustomTitleByNumericId(numericId: number) {
+    const data = await this.read();
+    const row = data.customTitles.find((entry) => entry.numericId === numericId);
+    return row ? rowToCustomTitle(row) : null;
+  }
+
+  async createCustomTitle(input: CustomTitleInput) {
+    return this.enqueue(async () => {
+      const data = await this.read();
+      const now = new Date().toISOString();
+      const fields = normalizeCustomFields(input);
+      const row: CustomTitleRow = {
+        id: randomUUID(),
+        numericId: nextNumericId(data.customTitles.map((entry) => entry.numericId)),
+        ...fields,
+        createdAt: now,
+        updatedAt: now,
+      };
+      data.customTitles.push(row);
+      await this.write(data);
+      return rowToCustomTitle(row);
+    });
+  }
+
+  async updateCustomTitle(id: string, patch: Partial<CustomTitleInput>) {
+    return this.enqueue(async () => {
+      const data = await this.read();
+      const row = data.customTitles.find((entry) => entry.id === id);
+      if (!row) return null;
+      const fields = normalizeCustomFields(patch as CustomTitleInput, row);
+      Object.assign(row, fields, { updatedAt: new Date().toISOString() });
+      await this.write(data);
+      return rowToCustomTitle(row);
+    });
+  }
+
+  async deleteCustomTitle(id: string) {
+    await this.enqueue(async () => {
+      const data = await this.read();
+      const row = data.customTitles.find((entry) => entry.id === id);
+      if (!row) return;
+      data.customTitles = data.customTitles.filter((entry) => entry.id !== id);
+      // A deleted title must not leave orphaned watchlist/history entries.
+      data.watchlist = data.watchlist.filter((item) => item.tmdbId !== row.numericId);
+      data.history = data.history.filter((item) => item.tmdbId !== row.numericId);
+      await this.write(data);
+    });
+  }
+
+  async listStreamSources(filter?: { mediaType?: MediaType; tmdbId?: number }): Promise<StreamSourceRecord[]> {
+    const data = await this.read();
+    return data.streams
+      .filter((row) => (filter?.mediaType ? row.mediaType === filter.mediaType : true))
+      .filter((row) => (filter?.tmdbId ? row.tmdbId === filter.tmdbId : true))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .map(rowToStreamSource);
+  }
+
+  async addStreamSource(input: StreamSourceInput) {
+    return this.enqueue(async () => {
+      const data = await this.read();
+      const normalized = normalizeStreamInput(input);
+      if (normalized.error || !normalized.value) throw new Error(normalized.error ?? "invalid_input");
+      const value = normalized.value;
+      const existing = data.streams.find(
+        (row) => row.mediaType === value.mediaType && row.tmdbId === value.tmdbId && row.url === value.url,
+      );
+      if (existing) return rowToStreamSource(existing);
+      const row: StreamSourceRow = {
+        id: randomUUID(),
+        mediaType: value.mediaType,
+        tmdbId: value.tmdbId,
+        label: value.label,
+        url: value.url,
+        quality: value.quality ?? null,
+        createdAt: new Date().toISOString(),
+      };
+      data.streams.push(row);
+      await this.write(data);
+      return rowToStreamSource(row);
+    });
+  }
+
+  async removeStreamSource(id: string) {
+    await this.enqueue(async () => {
+      const data = await this.read();
+      data.streams = data.streams.filter((row) => row.id !== id);
+      await this.write(data);
+    });
   }
 }

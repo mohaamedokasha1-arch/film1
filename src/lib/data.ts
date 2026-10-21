@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import type {
   BrowseFilters,
+  CustomTitleRecord,
   DataSource,
   EpisodeInfo,
   MediaType,
@@ -22,6 +23,14 @@ import {
   similarCatalog,
   trendingCatalog,
 } from "@/lib/catalog";
+import {
+  customToTitle,
+  getCustomRelated,
+  getCustomTitle,
+  getCustomTitleRecord,
+  getPublishedCustomTitles,
+  isCustomId,
+} from "@/lib/custom";
 import {
   hasTmdbCredentials,
   tmdbDetails,
@@ -99,6 +108,45 @@ function mergePaginated(
     totalResults: pages.reduce((total, entry) => total + entry.totalResults, 0),
     source: "tmdb",
   };
+}
+
+/** Applies the public browse filters to a dashboard title. */
+function matchesCustomFilters(record: CustomTitleRecord, filters: BrowseFilters): boolean {
+  if (filters.type && filters.type !== "all" && record.type !== filters.type) return false;
+  if (filters.genre && !record.genres.includes(filters.genre)) return false;
+  if (filters.year && String(record.year ?? "") !== filters.year) return false;
+  if (filters.minRating && (record.rating ?? 0) < filters.minRating) return false;
+  if (filters.arabicOnly && !/[\u0600-\u06FF]/.test(record.titleAr)) return false;
+  const query = filters.q?.trim().toLowerCase();
+  if (query) {
+    const haystack = `${record.titleAr} ${record.titleEn}`.toLowerCase();
+    if (!haystack.includes(query)) return false;
+  }
+  return true;
+}
+
+/** Dashboard titles that match the current browse/search filters, in the right locale. */
+function selectCustomTitles(
+  records: Awaited<ReturnType<typeof getPublishedCustomTitles>>,
+  filters: BrowseFilters,
+  locale: string,
+): Title[] {
+  return records
+    .filter((record) => matchesCustomFilters(record, filters))
+    .map((record) => customToTitle(record, locale));
+}
+
+function prependCustom(
+  base: Paginated<Title>,
+  custom: Title[],
+  page: number,
+  pageSize: number,
+): Paginated<Title> {
+  if (custom.length === 0) return base;
+  const totalResults = base.totalResults + custom.length;
+  const totalPages = Math.max(base.totalPages, Math.ceil(totalResults / pageSize), 1);
+  const items = page === 1 ? [...custom, ...base.items].slice(0, pageSize) : base.items;
+  return { ...base, items, page, totalPages, totalResults };
 }
 
 export type CollectionKey =
@@ -180,6 +228,12 @@ export async function getCollection(
 
 export async function getHomeFeed(locale: string) {
   const railSize = siteConfig.features.railSize;
+  const customRecords = await getPublishedCustomTitles();
+  const customTitles = customRecords.map((record) => customToTitle(record, locale));
+  const featuredCustom = customRecords
+    .filter((record) => record.featured)
+    .map((record) => customToTitle(record, locale));
+
   const [trending, popularMovies, topRatedMovies, popularTv, topRatedTv, arabic, drama] = await Promise.all([
     getCollection("trending", locale, { pageSize: railSize }),
     getCollection("popular", locale, { pageSize: railSize, type: "movie" }),
@@ -190,11 +244,14 @@ export async function getHomeFeed(locale: string) {
     getCollection("drama", locale, { pageSize: railSize }),
   ]);
 
-  const hero = [...trending.items]
+  const hero = [...featuredCustom, ...trending.items]
     .sort((a, b) => Number(Boolean(b.backdropPath)) - Number(Boolean(a.backdropPath)))
-    .slice(0, 6);
+    .slice(0, 8);
 
   const sections = [
+    ...(customTitles.length
+      ? [{ key: "recent", href: "/movies", items: customTitles.slice(0, railSize) }]
+      : []),
     { key: "trending", href: "/trending", items: trending.items },
     { key: "popularMovies", href: "/movies", items: popularMovies.items },
     { key: "topRatedMovies", href: "/top-rated?type=movie", items: topRatedMovies.items },
@@ -223,6 +280,9 @@ export async function browseTitles(filters: BrowseFilters, locale: string): Prom
   if (query) {
     return searchTitles({ ...filters, q: query }, locale);
   }
+
+  const customRecords = await getPublishedCustomTitles();
+  const custom = selectCustomTitles(customRecords, { ...filters, q: undefined }, locale);
 
   const live = await tryLive(async () => {
     if (!type) {
@@ -262,9 +322,9 @@ export async function browseTitles(filters: BrowseFilters, locale: string): Prom
     });
   }, "browse");
 
-  if (live && live.items.length > 0) return live;
+  if (live && live.items.length > 0) return prependCustom(live, custom, page, pageSize);
 
-  return browseCatalog({ ...filters, page, pageSize });
+  return prependCustom(browseCatalog({ ...filters, page, pageSize }), custom, page, pageSize);
 }
 
 export async function searchTitles(filters: BrowseFilters, locale: string): Promise<Paginated<Title>> {
@@ -273,6 +333,9 @@ export async function searchTitles(filters: BrowseFilters, locale: string): Prom
   const query = filters.q?.trim() ?? "";
 
   if (!query) return browseTitles({ ...filters, q: undefined }, locale);
+
+  const customRecords = await getPublishedCustomTitles();
+  const custom = selectCustomTitles(customRecords, { ...filters, q: query }, locale);
 
   const live = await tryLive(async () => {
     if (!filters.type && !filters.genre && !filters.year && !filters.minRating) {
@@ -291,20 +354,43 @@ export async function searchTitles(filters: BrowseFilters, locale: string): Prom
     return { ...base, items };
   }, "search");
 
-  if (live && live.items.length > 0) return live;
+  if (live && live.items.length > 0) return prependCustom(live, custom, page, pageSize);
 
-  return browseCatalog({ ...filters, q: query, page, pageSize });
+  return prependCustom(browseCatalog({ ...filters, q: query, page, pageSize }), custom, page, pageSize);
 }
 
 export async function getSuggestions(query: string, locale: string, limit = 8): Promise<Title[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
+  const customRecords = await getPublishedCustomTitles();
+  const needle = trimmed.toLowerCase();
+  const customMatches = customRecords
+    .filter((record) =>
+      `${record.titleAr} ${record.titleEn}`.toLowerCase().includes(needle),
+    )
+    .slice(0, limit)
+    .map((record) => customToTitle(record, locale));
+
   const live = await tryLive(() => tmdbSuggestions(trimmed, locale, limit), "suggestions");
-  if (live && live.length > 0) return live;
-  return catalogSearchSuggestions(trimmed, limit);
+  if (live && live.length > 0) {
+    return [...customMatches, ...live].slice(0, limit);
+  }
+  return [...customMatches, ...catalogSearchSuggestions(trimmed, limit)].slice(0, limit);
 }
 
 export const getTitleDetails = cache(async (type: MediaType, id: number, locale: string) => {
+  if (isCustomId(id)) {
+    const record = await getCustomTitleRecord(id);
+    if (!record || !record.published || record.type !== type) {
+      return { title: null, related: [] as Title[], source: "catalog" as const };
+    }
+    return {
+      title: customToTitle(record, locale),
+      related: await getCustomRelated(record, locale, 16),
+      source: "catalog" as const,
+    };
+  }
+
   const live = await tryLive(async () => {
     const result = await tmdbDetails(type, id, locale);
     return result;
@@ -324,6 +410,12 @@ export const getRelatedTitles = cache(async (type: MediaType, id: number, locale
 
 export const getSeasonEpisodes = cache(
   async (id: number, season: number, locale: string): Promise<EpisodeInfo[]> => {
+    if (isCustomId(id)) {
+      const record = await getCustomTitleRecord(id);
+      const info = record?.type === "tv" ? buildCustomEpisodes(record) : [];
+      return info.find((entry) => entry.season === season)?.episodes ?? [];
+    }
+
     const live = await tryLive(() => tmdbSeasonEpisodes(id, season, locale), `season:${id}:${season}`);
     if (live && live.length > 0) return live;
 
@@ -371,4 +463,36 @@ export async function getQuickStats() {
 
 export async function findByTmdbId(type: MediaType, id: number, locale: string) {
   return getTitleDetails(type, id, locale);
+}
+
+
+/** Expands a dashboard TV title into episode placeholders (titles/streams are optional). */
+function buildCustomEpisodes(
+  record: NonNullable<Awaited<ReturnType<typeof getCustomTitleRecord>>>,
+): { season: number; episodes: EpisodeInfo[] }[] {
+  const totalSeasons = Math.min(Math.max(record.seasons ?? 1, 1), 40);
+  const perSeason = Math.min(Math.max(record.episodes ?? 1, 1), 500);
+  return Array.from({ length: totalSeasons }, (_, index) => ({
+    season: index + 1,
+    episodes: Array.from({ length: perSeason }, (_unused, episodeIndex) => ({
+      episode: episodeIndex + 1,
+      name: null,
+      overview: null,
+      stillPath: null,
+      airDate: null,
+      runtime: record.runtime,
+      rating: record.rating,
+    })),
+  }));
+}
+
+/** Dashboard titles for the admin screen + counts. */
+export async function getCustomTitleStats() {
+  const records = await getPublishedCustomTitles();
+  return {
+    total: records.length,
+    featured: records.filter((record) => record.featured).length,
+    movies: records.filter((record) => record.type === "movie").length,
+    shows: records.filter((record) => record.type === "tv").length,
+  };
 }

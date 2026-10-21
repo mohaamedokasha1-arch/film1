@@ -125,6 +125,7 @@ export interface AdminStats {
   totalAdmins: number;
   watchlistItems: number;
   historyItems: number;
+  customTitles: number;
   source: DataSource;
   database: boolean;
 }
@@ -133,4 +134,77 @@ export interface ApiResult<T> {
   ok: boolean;
   data?: T;
   error?: string;
+}
+
+/** A playback link configured by the admin (used by custom titles and overrides). */
+export interface CustomStream {
+  label: string;
+  url: string;
+  quality?: string | null;
+}
+
+/** A title created from the admin dashboard — lives in the database, not TMDB. */
+export interface CustomTitleRecord {
+  id: string;
+  numericId: number;
+  type: MediaType;
+  titleAr: string;
+  titleEn: string;
+  overviewAr: string;
+  overviewEn: string;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  trailerUrl: string | null;
+  year: number | null;
+  rating: number | null;
+  runtime: number | null;
+  genres: string[];
+  cast: string[];
+  seasons: number | null;
+  episodes: number | null;
+  streams: CustomStream[];
+  published: boolean;
+  featured: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomTitleInput {
+  type: MediaType;
+  titleAr: string;
+  titleEn?: string;
+  overviewAr?: string;
+  overviewEn?: string;
+  posterUrl?: string | null;
+  backdropUrl?: string | null;
+  trailerUrl?: string | null;
+  year?: number | null;
+  rating?: number | null;
+  runtime?: number | null;
+  genres?: string[];
+  cast?: string[];
+  seasons?: number | null;
+  episodes?: number | null;
+  streams?: CustomStream[];
+  published?: boolean;
+  featured?: boolean;
+}
+
+/** An admin link that overrides the built-in servers of a real TMDB title. */
+export interface StreamSourceRecord {
+  id: string;
+  mediaType: MediaType;
+  tmdbId: number;
+  label: string;
+  url: string;
+  quality: string | null;
+  createdAt: string;
+}
+
+export interface StreamSourceInput {
+  mediaType: MediaType;
+  tmdbId: number;
+  label: string;
+  url: string;
+  quality?: string | null;
 }

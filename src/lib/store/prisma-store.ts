@@ -2,14 +2,27 @@ import "server-only";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import type {
   AdminStats,
+  CustomTitleInput,
+  CustomTitleRecord,
   HistoryRecord,
   MediaType,
   PublicUser,
+  StreamSourceInput,
+  StreamSourceRecord,
   UserRecord,
   WatchlistRecord,
 } from "@/types";
 import type { DataStore, HistoryInput, NewUser, WatchlistInput } from "./types";
 import { hasTmdbCredentials } from "@/lib/tmdb";
+import {
+  nextNumericId,
+  normalizeCustomFields,
+  normalizeStreamInput,
+  rowToCustomTitle,
+  rowToStreamSource,
+  type CustomTitleRow,
+  type StreamSourceRow,
+} from "./custom-helpers";
 
 const globalForPrisma = globalThis as unknown as { farjaPrisma?: PrismaClient };
 
@@ -246,19 +259,117 @@ export class PrismaStore implements DataStore {
   }
 
   async stats(): Promise<AdminStats> {
-    const [totalUsers, totalAdmins, watchlistItems, historyItems] = await Promise.all([
+    const [totalUsers, totalAdmins, watchlistItems, historyItems, customTitles] = await Promise.all([
       client().user.count(),
       client().user.count({ where: { role: "ADMIN" } }),
       client().watchlistItem.count(),
       client().watchHistory.count(),
+      client().customTitle.count(),
     ]);
     return {
       totalUsers,
       totalAdmins,
       watchlistItems,
       historyItems,
+      customTitles,
       source: hasTmdbCredentials() ? "tmdb" : "catalog",
       database: true,
     };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Admin-managed content                                            */
+  /* ---------------------------------------------------------------- */
+
+  async listCustomTitles(options?: { publishedOnly?: boolean }): Promise<CustomTitleRecord[]> {
+    const rows = await client().customTitle.findMany({
+      where: options?.publishedOnly ? { published: true } : undefined,
+      orderBy: { numericId: "desc" },
+    });
+    return rows.map((row) => rowToCustomTitle(row as unknown as CustomTitleRow));
+  }
+
+  async findCustomTitle(id: string): Promise<CustomTitleRecord | null> {
+    const row = await client().customTitle.findUnique({ where: { id } });
+    return row ? rowToCustomTitle(row as unknown as CustomTitleRow) : null;
+  }
+
+  async findCustomTitleByNumericId(numericId: number): Promise<CustomTitleRecord | null> {
+    const row = await client().customTitle.findUnique({ where: { numericId } });
+    return row ? rowToCustomTitle(row as unknown as CustomTitleRow) : null;
+  }
+
+  async createCustomTitle(input: CustomTitleInput): Promise<CustomTitleRecord> {
+    const aggregate = await client().customTitle.aggregate({ _max: { numericId: true } });
+    const numericId = nextNumericId(aggregate._max.numericId ? [aggregate._max.numericId] : []);
+    const row = await client().customTitle.create({
+      data: { numericId, ...normalizeCustomFields(input) },
+    });
+    return rowToCustomTitle(row as unknown as CustomTitleRow);
+  }
+
+  async updateCustomTitle(id: string, patch: Partial<CustomTitleInput>): Promise<CustomTitleRecord | null> {
+    const current = await client().customTitle.findUnique({ where: { id } });
+    if (!current) return null;
+    const row = await client().customTitle.update({
+      where: { id },
+      data: normalizeCustomFields(patch as CustomTitleInput, current as unknown as CustomTitleRow),
+    });
+    return rowToCustomTitle(row as unknown as CustomTitleRow);
+  }
+
+  async deleteCustomTitle(id: string): Promise<void> {
+    const row = await client().customTitle.findUnique({ where: { id } });
+    if (!row) return;
+    // A deleted title must not leave orphaned watchlist/history entries.
+    await Promise.all([
+      client().watchlistItem.deleteMany({ where: { tmdbId: row.numericId } }),
+      client().watchHistory.deleteMany({ where: { tmdbId: row.numericId } }),
+    ]);
+    await client()
+      .customTitle.delete({ where: { id } })
+      .catch(() => undefined);
+  }
+
+  async listStreamSources(filter?: { mediaType?: MediaType; tmdbId?: number }): Promise<StreamSourceRecord[]> {
+    const rows = await client().streamSource.findMany({
+      where: {
+        ...(filter?.mediaType ? { mediaType: filter.mediaType } : {}),
+        ...(filter?.tmdbId ? { tmdbId: filter.tmdbId } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map((row) => rowToStreamSource(row as unknown as StreamSourceRow));
+  }
+
+  async addStreamSource(input: StreamSourceInput): Promise<StreamSourceRecord> {
+    const normalized = normalizeStreamInput(input);
+    if (normalized.error || !normalized.value) throw new Error(normalized.error ?? "invalid_input");
+    const value = normalized.value;
+    try {
+      const row = await client().streamSource.create({
+        data: {
+          mediaType: value.mediaType,
+          tmdbId: value.tmdbId,
+          label: value.label,
+          url: value.url,
+          quality: value.quality ?? null,
+        },
+      });
+      return rowToStreamSource(row as unknown as StreamSourceRow);
+    } catch (error) {
+      if (!isUniqueError(error)) throw error;
+      const existing = await client().streamSource.findFirst({
+        where: { mediaType: value.mediaType, tmdbId: value.tmdbId, url: value.url },
+      });
+      if (!existing) throw error;
+      return rowToStreamSource(existing as unknown as StreamSourceRow);
+    }
+  }
+
+  async removeStreamSource(id: string): Promise<void> {
+    await client()
+      .streamSource.delete({ where: { id } })
+      .catch(() => undefined);
   }
 }

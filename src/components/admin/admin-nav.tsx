@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Settings, Users } from "lucide-react";
+import { Film, LayoutDashboard, Settings, ServerCog, Users } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 
@@ -10,6 +10,8 @@ export function AdminNav() {
 
   const items = [
     { href: "/admin", label: t("overview"), icon: LayoutDashboard },
+    { href: "/admin/titles", label: t("content"), icon: Film },
+    { href: "/admin/streams", label: t("streams"), icon: ServerCog },
     { href: "/admin/users", label: t("users"), icon: Users },
     { href: "/admin/settings", label: t("settings"), icon: Settings },
   ];

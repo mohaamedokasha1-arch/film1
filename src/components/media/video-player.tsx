@@ -1,12 +1,121 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, RefreshCw, ShieldAlert, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  ServerCog,
+  ShieldAlert,
+  X,
+} from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { buildEmbedUrl, playerSandbox, streamProviders } from "@/config/players";
-import type { MediaType } from "@/types";
+import type { CustomStream, MediaType } from "@/types";
 import { cn } from "@/lib/utils";
+import { fillStreamTemplate, isHlsUrl, isNativePlayable } from "@/lib/streams";
+
+interface PlayerSource {
+  id: string;
+  name: string;
+  quality: string;
+  url: string;
+  custom: boolean;
+}
+
+/** Native <video> element with optional hls.js support for .m3u8 links. */
+function DirectVideo({
+  src,
+  title,
+  poster,
+  reloadKey,
+  onReady,
+}: {
+  src: string;
+  title: string;
+  poster?: string | null;
+  reloadKey: number;
+  onReady: () => void;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    setFailed(false);
+    video.src = "";
+
+    if (!isHlsUrl(src)) {
+      video.src = src;
+      return;
+    }
+
+    // Safari (and iOS) plays HLS natively; every other browser needs hls.js.
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = src;
+      return;
+    }
+
+    let cancelled = false;
+    let instance: { destroy: () => void } | null = null;
+
+    import("hls.js")
+      .then(({ default: Hls }) => {
+        if (cancelled) return;
+        if (!Hls.isSupported()) {
+          video.src = src;
+          return;
+        }
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        hls.loadSource(src);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) setFailed(true);
+        });
+        instance = hls;
+      })
+      .catch(() => {
+        if (!cancelled) video.src = src;
+      });
+
+    return () => {
+      cancelled = true;
+      instance?.destroy();
+    };
+  }, [src, reloadKey]);
+
+  return (
+    <div className="relative h-full w-full bg-black">
+      <video
+        key={reloadKey}
+        ref={ref}
+        controls
+        playsInline
+        preload="metadata"
+        poster={poster ?? undefined}
+        title={title}
+        className="h-full w-full"
+        onCanPlay={onReady}
+        onError={() => setFailed(true)}
+      />
+      {failed && (
+        <div className="absolute inset-0 grid place-items-center bg-night-950/90 px-6 text-center">
+          <div className="space-y-2">
+            <AlertTriangle className="mx-auto h-7 w-7 text-gold-400" />
+            <p className="text-xs font-semibold text-fg">{title}</p>
+            <p className="text-[10px] text-muted">
+              Some browsers block this format. Try another server or open the link directly.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function VideoPlayer({
   tmdbId,
@@ -14,16 +123,24 @@ export function VideoPlayer({
   title,
   season = 1,
   episode = 1,
+  customStreams = [],
+  poster,
+  builtInServers = true,
 }: {
   tmdbId: number;
   mediaType: MediaType;
   title: string;
   season?: number;
   episode?: number;
+  /** Links added by the admin (custom titles or TMDB overrides). */
+  customStreams?: CustomStream[];
+  poster?: string | null;
+  /** Dashboard titles have no TMDB id, so the built-in embeds cannot work for them. */
+  builtInServers?: boolean;
 }) {
   const t = useTranslations("player");
   const locale = useLocale();
-  const [providerId, setProviderId] = useState(streamProviders[0].id);
+  const [providerId, setProviderId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -31,11 +148,34 @@ export function VideoPlayer({
   const [reportText, setReportText] = useState("");
   const [reportPending, setReportPending] = useState(false);
 
-  const provider = useMemo(
-    () => streamProviders.find((entry) => entry.id === providerId) ?? streamProviders[0],
-    [providerId],
-  );
-  const url = buildEmbedUrl(provider, mediaType, tmdbId, season, episode);
+  const sources = useMemo<PlayerSource[]>(() => {
+    const adminSources = customStreams.map((stream, index) => ({
+      id: `admin-${index}-${stream.url.slice(0, 24)}`,
+      name: stream.label || `${t("servers")} ${index + 1}`,
+      quality: stream.quality || "HD",
+      url: fillStreamTemplate(stream.url, { id: tmdbId, season, episode }),
+      custom: true,
+    }));
+
+    const builtIn = (builtInServers ? streamProviders : []).map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      quality: provider.quality,
+      url: buildEmbedUrl(provider, mediaType, tmdbId, season, episode),
+      custom: false,
+    }));
+
+    const seen = new Set<string>();
+    return [...adminSources, ...builtIn].filter((source) => {
+      if (seen.has(source.url)) return false;
+      seen.add(source.url);
+      return true;
+    });
+  }, [builtInServers, customStreams, episode, mediaType, season, t, tmdbId]);
+
+  const provider = sources.find((entry) => entry.id === providerId) ?? sources[0];
+  const url = provider?.url ?? "";
+  const native = isNativePlayable(url);
 
   const switchProvider = (id: string) => {
     setProviderId(id);
@@ -49,7 +189,14 @@ export function VideoPlayer({
       await fetch("/api/report", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tmdbId, mediaType, season, episode, provider: provider.id, message: reportText }),
+        body: JSON.stringify({
+          tmdbId,
+          mediaType,
+          season,
+          episode,
+          provider: provider?.id ?? "unknown",
+          message: reportText,
+        }),
       });
       setReportSent(true);
     } catch {
@@ -59,12 +206,14 @@ export function VideoPlayer({
     }
   };
 
+  if (!provider) return null;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted/70">{t("servers")}</span>
         <div className="no-scrollbar flex flex-1 gap-2 overflow-x-auto">
-          {streamProviders.map((item, index) => (
+          {sources.map((item, index) => (
             <button
               key={item.id}
               type="button"
@@ -77,10 +226,12 @@ export function VideoPlayer({
               )}
             >
               <span className="grid h-5 w-5 place-items-center rounded-full bg-bg/70 text-[9px] font-bold">
-                {index + 1}
+                {item.custom ? <ServerCog className="h-3 w-3" /> : index + 1}
               </span>
               {item.name}
-              <span className="rounded bg-gold-500/15 px-1.5 py-0.5 text-[8px] font-bold text-gold-300">{item.quality}</span>
+              <span className="rounded bg-gold-500/15 px-1.5 py-0.5 text-[8px] font-bold text-gold-300">
+                {item.quality}
+              </span>
             </button>
           ))}
         </div>
@@ -97,17 +248,28 @@ export function VideoPlayer({
               </div>
             </div>
           )}
-          <iframe
-            key={`${provider.id}-${reloadKey}`}
-            src={url}
-            title={`${title} — ${provider.name}`}
-            className="h-full w-full"
-            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-            allowFullScreen
-            referrerPolicy="origin"
-            sandbox={playerSandbox}
-            onLoad={() => setLoaded(true)}
-          />
+          {native ? (
+            <DirectVideo
+              key={`${provider.id}`}
+              src={url}
+              title={`${title} — ${provider.name}`}
+              poster={poster}
+              reloadKey={reloadKey}
+              onReady={() => setLoaded(true)}
+            />
+          ) : (
+            <iframe
+              key={`${provider.id}-${reloadKey}`}
+              src={url}
+              title={`${title} — ${provider.name}`}
+              className="h-full w-full"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              referrerPolicy="origin"
+              sandbox={playerSandbox}
+              onLoad={() => setLoaded(true)}
+            />
+          )}
         </div>
       </div>
 

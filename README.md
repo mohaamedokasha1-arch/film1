@@ -16,6 +16,7 @@
 - [التشغيل المحلي](#التشغيل-المحلي)
 - [متغيرات البيئة](#متغيرات-البيئة)
 - [النشر على Vercel (بدون أي أوامر يدوية)](#النشر-على-vercel-بدون-أي-أوامر-يدوية)
+- [استوديو المحتوى: أضف أي فيلم برابط](#استوديو-المحتوى-أضف-أي-فيلم-برابط)
 - [بيانات الدخول للمشرف](#بيانات-الدخول-للمشرف)
 - [مصدر البيانات: TMDB](#مصدر-البيانات-tmdb)
 - [قاعدة البيانات: Neon](#قاعدة-البيانات-neon)
@@ -54,6 +55,15 @@
 - صفحة حساب: الملف الشخصي، تغيير كلمة المرور، حذف الحساب.
 - لوحة تحكم: إحصائيات، إدارة المستخدمين (ترقية/حذف)، إعدادات الموقع وبيانات دخول المشرف.
 - حماية المسارات: زائر غير مسجّل يطلب `/account` أو `/admin` يحصل على تحويل 307 حقيقي إلى صفحة الدخول مع `?next=`.
+
+**استوديو المحتوى (لوحة التحكم)**
+
+- إضافة أي فيلم أو مسلسل **برابط تشغيل** من لوحة التحكم، ويظهر فورًا في الصفحة الرئيسية والبحث والتصفح وصفحة العمل.
+- كل التفاصيل قابلة للتعديل: الاسم بالعربية والإنجليزية، الوصف، البوستر والخلفية، الإعلان، السنة، التقييم، المدة، التصنيفات، طاقم العمل، عدد المواسم والحلقات.
+- عدة روابط تشغيل لكل عمل (Embed أو ملف فيديو مباشر mp4 / m3u8) مع دعم `{season}` و`{episode}` للمسلسلات.
+- استيراد سريع من كتالوج الموقع المضمّن (أو من TMDB برقم العمل) لتعبئة البيانات تلقائيًا.
+- إضافة روابط تشغيل خاصة لأي عنوان موجود في TMDB، تظهر قبل السيرفرات الافتراضية في المشغّل.
+- نشر/إخفاء أو تمييز أي عنوان لعرضه في السلايدر الرئيسي بضغطة واحدة.
 
 **الإنتاج**
 
@@ -162,7 +172,60 @@ TMDB_API_KEY          = <مفتاح TMDB>
 
 ---
 
-## بيانات الدخول للمشرف
+## استوديو المحتوى: أضف أي فيلم برابط
+
+كل ما تحتاجه لإضافة عمل جديد: **الاسم + رابط التشغيل**. الباقي اختياري.
+
+### من اللوحة
+
+1. سجّل الدخول كمشرف ثم افتح **`/ar/admin/titles`**.
+2. اضغط **«أضف عملًا جديدًا»**.
+3. (اختياري) اكتب اسم الفيلم في **الاستيراد السريع** لملء البيانات من كتالوج الموقع تلقائيًا، أو أدخل رقم العمل في TMDB واضغط «استيراد».
+4. اكتب الاسم بالعربية/الإنجليزية، وأضف **رابط التشغيل** (يمكن إضافة أكثر من سيرفر).
+   - رابط Embed عادي: `https://vidsrc.xyz/embed/movie/155`
+   - ملف فيديو مباشر: `https://cdn.example.com/movie.mp4` أو `https://cdn.example.com/master.m3u8`
+   - للمسلسلات: `https://example.com/embed/{season}/{episode}` — يتم استبدال القيم تلقائيًا.
+5. اختر **منشور** (يظهر للزوار) و**مميّز** (يظهر في السلايدر) ثم اضغط **حفظ**.
+6. ستجد العمل فورًا على `/ar` و`/ar/movies` وفي البحث، ورابطه `/{locale}/title/{type}/{numericId}`.
+
+### سيرفرات تشغيل لأعمال TMDB الموجودة
+
+افتح **`/ar/admin/streams`** وأضف: النوع (فيلم/مسلسل) + رقم TMDB + اسم السيرفر + الرابط.
+تظهر هذه الروابط **أولًا** في مشغّل الفيديو قبل السيرفرات العامة، ويمكن حذفها في أي وقت.
+
+### واجهة API (اختيارية)
+
+كل العمليات محمية بجلسة المشرف (كوكي `authjs.session-token`)، وتعمل بالـ JSON:
+
+```bash
+# كل العناوين المضافة
+curl -b cookies.txt http://localhost:3000/api/admin/titles
+
+# إضافة فيلم برابط
+curl -b cookies.txt -X POST http://localhost:3000/api/admin/titles \
+  -H 'content-type: application/json' \
+  -d '{"type":"movie","titleAr":"اسم الفيلم","titleEn":"Movie name",
+       "year":2025,"genres":["action"],
+       "streams":[{"label":"سيرفر 1","url":"https://example.com/embed/123","quality":"FHD"}],
+       "published":true,"featured":false}'
+
+# تعديل / حذف
+curl -b cookies.txt -X PATCH  http://localhost:3000/api/admin/titles/<id> -H 'content-type: application/json' -d '{"published":false}'
+curl -b cookies.txt -X DELETE http://localhost:3000/api/admin/titles/<id>
+
+# سيرفرات TMDB
+curl -b cookies.txt -X POST http://localhost:3000/api/admin/streams \
+  -H 'content-type: application/json' \
+  -d '{"mediaType":"tv","tmdbId":1399,"label":"سيرفري","url":"https://example.com/s/{season}/{episode}","quality":"HD"}'
+```
+
+> العناوين المضافة تُحفظ في جدولَي `CustomTitle` و`StreamSource` داخل PostgreSQL.
+> أرقامها تبدأ من `9000000` حتى لا تتعارض مع أرقام TMDB.
+>
+> ⚠️ بدون `DATABASE_URL` تُحفظ العناوين في ملف مؤقت (`.data/store.json`) للتجربة المحلية فقط — على Vercel لن تدوم بعد إعادة النشر.
+> اربط قاعدة بيانات قبل إضافة محتوى حقيقي.
+
+### بيانات الدخول للمشرف
 
 | الحقل | القيمة الافتراضية |
 | --- | --- |
@@ -254,14 +317,14 @@ python3 scripts/build_catalog.py \
 ├── src/
 │   ├── app/
 │   │   ├── [locale]/             # كل الصفحات (ar/en): الرئيسية، استعراض، بحث، عمل، مشاهدة، حساب، admin، about، privacy
-│   │   ├── api/                  # auth / watchlist / history / search / report
+│   │   ├── api/                  # auth / watchlist / history / search / report / admin (titles · streams · import)
 │   │   ├── robots.ts, sitemap.ts, global-error.tsx
 │   ├── components/               # ui, navigation, layout, media, browse, home, auth, account, admin
 │   ├── config/                   # site.ts (الهوية) · genres.ts · players.ts
 │   ├── data/catalog.json         # كتالوج TMDB المضمّن (2,630 عنوانًا)
 │   ├── i18n/                     # routing.ts · request.ts · navigation.ts
 │   ├── messages/                 # ar.json · en.json (17 namespace متطابقة المفاتيح)
-│   ├── lib/                      # auth · actions (Server Actions) · data · tmdb · catalog · store (Prisma/File)
+│   ├── lib/                      # auth · actions · data · tmdb · catalog · custom (عناوين اللوحة) · streams · store (Prisma/File)
 │   └── middleware.ts             # توجيه اللغة + حماية /account و /admin
 ├── public/                       # favicon.svg · og.png
 ├── vercel.json                   # Build/Install commands
@@ -297,6 +360,8 @@ python3 scripts/build_catalog.py \
 | `/[locale]/watch/[movie\|tv]/[id]` | المشغّل متعدد السيرفرات |
 | `/[locale]/login` · `/register` · `/account` | الحساب |
 | `/[locale]/admin` · `/admin/users` · `/admin/settings` | لوحة التحكم (ADMIN فقط) |
+| `/[locale]/admin/titles` · `/admin/titles/new` · `/admin/titles/[id]` | إدارة الأفلام والمسلسلات المضافة |
+| `/[locale]/admin/streams` | روابط تشغيل إضافية لعناوين TMDB |
 | `/[locale]/about` · `/privacy` | صفحات ثابتة |
 | `/api/auth/*` · `/api/watchlist` · `/api/history` · `/api/search` | واجهات API |
 
@@ -313,6 +378,9 @@ python3 scripts/build_catalog.py \
 | بعض السيرفرات لا تعمل | هذه سيرفرات عامة تابعة لجهات أخرى وتتغير باستمرار. بدّل من قائمة السيرفرات أو أضف/عدّل في `src/config/players.ts`. |
 | `MISSING_MESSAGE` في السجلات | مفتاح ناقص في `ar.json` أو `en.json` — أضفه في الملفين بنفس المسار. |
 | صفحة تظهر 200 بدل تحويل للدخول | الحماية تعتمد على `src/middleware.ts` (كوكي الجلسة). لا تحذف الـ middleware. |
+| أضفت فيلمًا ولا يظهر في الموقع | تأكد من تفعيل **«منشور»** في النموذج، ثم أعد تحميل الصفحة. لو ما زال مخفيًا راجع سجل السيرفر. |
+| رابط تشغيل لا يعمل داخل المشغّل | بعض المواقع تمنع التضمين (X-Frame-Options). استخدم رابط Embed من سيرفر يسمح بالتضمين، أو أضف السيرفر في `src/config/players.ts`. |
+| ملف m3u8 لا يعمل على Chrome | المشغّل يحمّل `hls.js` تلقائيًا لملفات HLS؛ تأكد من أن الرابط ينتهي بـ `.m3u8` وأن السيرفر يسمح بـ CORS. |
 
 ---
 
