@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 7 7 11;
+  --fg: 245 241 230;
+  --muted: 154 150 166;
+  --card: 16 16 24;
+  --line: 34 34 46;
+  --font-body: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+html.light {
+  --bg: 246 243 236;
+  --fg: 22 19 14;
+  --muted: 96 92 84;
+  --card: 255 255 255;
+  --line: 225 219 206;
+  color-scheme: light;
+}
+
+html[lang="en"] {
+  --font-body: "Inter", "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  border-color: rgb(var(--line));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: var(--font-body);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(212, 175, 55, 0.35);
+  color: #fff;
+}
+
+/* Elegant, thin scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgb(var(--bg));
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--line));
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8f721f;
+}
+
+@layer base {
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  a, button { -webkit-tap-highlight-color: transparent; }
+  :focus-visible {
+    outline: 2px solid #d4af37;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-[1500px] px-4 sm:px-6 lg:px-10;
+  }
+  .surface {
+    @apply rounded-2xl border border-line/80 bg-card/80 backdrop-blur;
+  }
+  .gold-text {
+    @apply bg-gradient-to-r from-gold-300 via-gold-500 to-gold-300 bg-clip-text text-transparent;
+  }
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-gold-400;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-gold {
+    @apply btn bg-gradient-to-r from-gold-400 to-gold-600 text-night-950 shadow-glow hover:brightness-110 active:scale-[0.98];
+  }
+  .btn-outline {
+    @apply btn border border-line bg-card/60 text-fg hover:border-gold-500/70 hover:text-gold-300;
+  }
+  .btn-ghost {
+    @apply btn text-muted hover:bg-card hover:text-fg;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-card/70 px-4 py-3 text-sm text-fg placeholder:text-muted/70 outline-none transition focus:border-gold-500/70 focus:ring-2 focus:ring-gold-500/20;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-card/60 px-3 py-1 text-xs text-muted;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.055;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+}
+
+/* Focus ring for cards */
+.card-ring {
+  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.35), 0 25px 60px -30px rgba(0, 0, 0, 0.9);
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgb(var(--card));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: shimmer 1.7s infinite;
+}
