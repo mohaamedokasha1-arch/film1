@@ -15,6 +15,16 @@ export const siteConfig = {
   },
   url: process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXTAUTH_URL || "https://farja.app",
   email: "hello@farja.app",
+  /**
+   * Search-engine ownership proof. Rendered as
+   * `<meta name="google-site-verification" content="…" />` inside <head>.
+   * Override with NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION when moving to a new domain.
+   */
+  verification: {
+    google:
+      process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION ||
+      "6nwKbe3UwHbbzzDg0S8a6TRE_rEEIAdyGgIJD6q6ua4",
+  },
   adminEmailDefault: "admin@farja.app",
   adminPasswordDefault: "Admin@12345",
   socials: {
