@@ -126,6 +126,7 @@ npm run build && npm start
 | `TMDB_READ_TOKEN` | اختياري | بديل للمفتاح: Read Access Token (v4 Bearer) |
 | `ADMIN_EMAIL` | اختياري | بريد المشرف؛ الافتراضي `admin@farja.app` |
 | `ADMIN_PASSWORD` | اختياري | كلمة مرور المشرف؛ الافتراضية `Admin@12345` |
+| `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` | اختياري | كود إثبات ملكية **Google Search Console** — يُرندر كـ `<meta name="google-site-verification">` داخل `<head>` في كل الصفحات. القيمة الافتراضية محفوظة في `src/config/site.ts`. |
 | `NEXT_IMAGE_OPTIMIZATION` | اختياري | `1` لتفعيل تحسين صور Vercel (الافتراضي معطّل ليعمل على أي استضافة بدون تكاليف) |
 
 > لا تضع أي مفتاح داخل الكود ولا ترفع `.env.local` إلى Git (مستثنى بالفعل في `.gitignore`).
@@ -171,6 +172,18 @@ TMDB_API_KEY          = <مفتاح TMDB>
 > إذا فشل `prisma db push` يتوقف البناء برسالة واضحة بدلًا من نشر موقع معطّل — راجع `DATABASE_URL` و SSL.
 
 ---
+
+## إثبات ملكية Google Search Console
+
+الوسم موجود تلقائيًا في `<head>` لكل صفحات الموقع (العربية والإنجليزية):
+
+```html
+<meta name="google-site-verification" content="6nwKbe3UwHbbzzDg0S8a6TRE_rEEIAdyGgIJD6q6ua4" />
+```
+
+- يُقرأ من `siteConfig.verification.google` في `src/config/site.ts`، ويمكن استبداله بمتغيّر البيئة `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION` عند تغيير النطاق.
+- بعد النشر: افتح [search.google.com/search-console](https://search.google.com/search-console) → **Add property → URL prefix** → أدخل رابط الموقع → اختر **HTML tag** → اضغط **Verify**.
+- لا تحتاج إلى لصق الوسم يدويًا؛ يكفي أن يكون الموقع منشورًا على الرابط نفسه.
 
 ## استوديو المحتوى: أضف أي فيلم برابط
 
