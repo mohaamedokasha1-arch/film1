@@ -1,8 +1,11 @@
 import type { MetadataRoute } from "next";
 import { siteConfig } from "@/config/site";
 import { genres } from "@/config/genres";
+import { getPublishedCustomTitles } from "@/lib/custom";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export const dynamic = "force-dynamic";
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = siteConfig.url.replace(/\/$/, "");
   const paths = ["", "/movies", "/tv", "/trending", "/top-rated", "/arabic", "/search", "/about", "/privacy"];
   const now = new Date();
@@ -22,5 +25,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.5,
     })),
   );
-  return [...pages, ...genrePages];
+  // Titles added from the dashboard are real pages too.
+  const custom = await getPublishedCustomTitles().catch(() => []);
+  const customPages = ["ar", "en"].flatMap((locale) =>
+    custom.map((title) => ({
+      url: `${base}/${locale}/title/${title.type}/${title.numericId}`,
+      lastModified: new Date(title.updatedAt),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    })),
+  );
+
+  return [...pages, ...genrePages, ...customPages];
 }

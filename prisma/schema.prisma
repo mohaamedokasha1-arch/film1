@@ -70,3 +70,55 @@ model Setting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+/// Titles added by the admin from the dashboard ("add a film by link").
+/// They behave exactly like catalogue titles across the whole site.
+model CustomTitle {
+  id          String   @id @default(cuid())
+  /// Public numeric id used in /title/[type]/[id] URLs (>= 9,000,000)
+  numericId   Int      @unique
+  /// "movie" | "tv"
+  type        String
+  titleAr     String
+  titleEn     String   @default("")
+  overviewAr  String   @default("")
+  overviewEn  String   @default("")
+  posterUrl   String?
+  backdropUrl String?
+  trailerUrl  String?
+  year        Int?
+  rating      Float?
+  runtime     Int?
+  /// Comma separated genre slugs (see src/config/genres.ts)
+  genres      String   @default("")
+  /// Comma separated actor names
+  castNames   String   @default("")
+  seasons     Int?
+  episodes    Int?
+  /// JSON array: [{ label, url, quality }]
+  streams     String   @default("[]")
+  published   Boolean  @default(true)
+  featured    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([published, type])
+  @@index([featured])
+  @@index([createdAt])
+}
+
+/// Admin-provided playback links for titles that already exist on TMDB.
+/// When present they replace/augment the built-in embed servers.
+model StreamSource {
+  id        String   @id @default(cuid())
+  /// "movie" | "tv"
+  mediaType String
+  tmdbId    Int
+  label     String
+  url       String
+  quality   String?
+  createdAt DateTime @default(now())
+
+  @@unique([mediaType, tmdbId, url])
+  @@index([mediaType, tmdbId])
+}

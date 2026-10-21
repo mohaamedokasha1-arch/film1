@@ -1,8 +1,12 @@
 import type {
   AdminStats,
+  CustomTitleInput,
+  CustomTitleRecord,
   HistoryRecord,
   MediaType,
   PublicUser,
+  StreamSourceInput,
+  StreamSourceRecord,
   UserRecord,
   UserRole,
   WatchlistRecord,
@@ -57,4 +61,16 @@ export interface DataStore {
   getSettings(): Promise<Record<string, string>>;
   setSetting(key: string, value: string): Promise<void>;
   stats(): Promise<AdminStats>;
+
+  /* --- Admin-managed content (custom titles + playback links) --- */
+  listCustomTitles(options?: { publishedOnly?: boolean }): Promise<CustomTitleRecord[]>;
+  findCustomTitle(id: string): Promise<CustomTitleRecord | null>;
+  findCustomTitleByNumericId(numericId: number): Promise<CustomTitleRecord | null>;
+  createCustomTitle(input: CustomTitleInput): Promise<CustomTitleRecord>;
+  updateCustomTitle(id: string, patch: Partial<CustomTitleInput>): Promise<CustomTitleRecord | null>;
+  deleteCustomTitle(id: string): Promise<void>;
+
+  listStreamSources(filter?: { mediaType?: MediaType; tmdbId?: number }): Promise<StreamSourceRecord[]>;
+  addStreamSource(input: StreamSourceInput): Promise<StreamSourceRecord>;
+  removeStreamSource(id: string): Promise<void>;
 }

@@ -5,8 +5,9 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Film, Play } from "lucide-react";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { getSeasonEpisodes, getTitleDetails } from "@/lib/data";
+import { getCustomTitleRecord, getStreamOverrides, isCustomId } from "@/lib/custom";
 import type { MediaType } from "@/types";
-import { cn, getYear, posterUrl } from "@/lib/utils";
+import { backdropUrl, cn, getYear, posterUrl } from "@/lib/utils";
 import { AdSlot } from "@/components/ui/ad-slot";
 import { VideoPlayer } from "@/components/media/video-player";
 import { HistoryRecorder } from "@/components/media/history-recorder";
@@ -58,6 +59,10 @@ export default async function WatchPage({ params, searchParams }: PageProps) {
   let episode = Number(sp.episode);
   if (!Number.isInteger(episode) || episode < 1) episode = 1;
   if (episodes.length) episode = Math.min(episode, episodes.length);
+
+  const adminStreams = isCustomId(numericId)
+    ? ((await getCustomTitleRecord(numericId))?.streams ?? [])
+    : await getStreamOverrides(mediaType, numericId);
 
   const poster = posterUrl(title.posterPath, "w342");
   const currentEpisode = episodes.find((entry) => entry.episode === episode);
@@ -124,6 +129,9 @@ export default async function WatchPage({ params, searchParams }: PageProps) {
         title={title.title}
         season={season}
         episode={episode}
+        customStreams={adminStreams}
+        builtInServers={!isCustomId(numericId)}
+        poster={backdropUrl(title.backdropPath, "w1280") ?? posterUrl(title.posterPath, "w780")}
       />
 
       <HistoryRecorder
